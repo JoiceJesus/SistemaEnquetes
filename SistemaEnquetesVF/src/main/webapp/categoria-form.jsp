@@ -1,0 +1,6 @@
+<%@ page contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
+<%@ page import="model.CategoriaModel" %>
+<% CategoriaModel categoria=(CategoriaModel)request.getAttribute("categoria"); boolean editar=categoria!=null; %>
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Categoria</title><link rel="stylesheet" href="assets/css/style.css"></head>
+<body class="bg-gray-100 p-8"><div class="max-w-xl mx-auto bg-white rounded-xl shadow p-6"><h1 class="text-2xl font-bold mb-6"><%=editar?"Editar":"Cadastrar"%> Categoria</h1>
+<form method="post" action="categoria" class="space-y-4"><input type="hidden" name="acao" value="<%=editar?"atualizar":"inserir"%>"><% if(editar){ %><input type="hidden" name="idCategoria" value="<%=categoria.getIdCategoria()%>"><% } %><input class="w-full border rounded p-2" name="nomeCategoria" required value="<%=editar?categoria.getNomeCategoria():""%>" placeholder="Nome da categoria"><button class="bg-indigo-600 text-white px-4 py-2 rounded">Salvar</button> <a href="categoria?acao=listar" class="ml-3 text-indigo-600">Cancelar</a></form></div></body></html>

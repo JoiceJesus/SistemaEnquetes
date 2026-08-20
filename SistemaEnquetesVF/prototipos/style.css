@@ -1,0 +1,15 @@
+/* Esconde a barra de rolagem horizontal nos filtros sem perder a funcionalidade */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Transições de cores do tema escuro/claro */
+body, header, main, div, button {
+  transition-property: color, background-color, border-color;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 200ms;
+}
