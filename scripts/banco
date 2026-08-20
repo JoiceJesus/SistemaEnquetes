@@ -1,0 +1,79 @@
+-- CREATE DATABASE sistema_enquetes;
+USE sistema_enquetes;
+CREATE TABLE nivel_acesso (
+    idnivel_acesso INT AUTO_INCREMENT PRIMARY KEY,
+    tipo VARCHAR(45) NOT NULL,
+    permissoes VARCHAR(45) NOT NULL
+);
+CREATE TABLE categoria (
+    idcategoria INT AUTO_INCREMENT PRIMARY KEY,
+    nome_categoria VARCHAR(45) NOT NULL
+);
+CREATE TABLE usuario (
+    idusuario INT AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(45) NOT NULL,
+    email VARCHAR(45) NOT NULL UNIQUE,
+    senha VARCHAR(255) NOT NULL,
+    -- mudança do tipo em data_cadastro, varchar para datetime
+    data_cadastro DATETIME DEFAULT CURRENT_TIMESTAMP,
+    status INT NOT NULL,
+    nivel_acesso_idnivel_acesso INT NOT NULL,
+
+    CONSTRAINT fk_usuario_nivel
+        FOREIGN KEY (nivel_acesso_idnivel_acesso)
+        REFERENCES nivel_acesso(idnivel_acesso)
+);
+CREATE TABLE enquete (
+    idenquete INT AUTO_INCREMENT PRIMARY KEY,
+    titulo VARCHAR(45) NOT NULL,
+    descricao VARCHAR(255),
+    tipo_votacao VARCHAR(45),
+    limite_votos_ip INT,
+    limite_quantidade_votos INT,
+    data_criacao DATETIME DEFAULT CURRENT_TIMESTAMP,
+    data_expiracao DATETIME,
+    status VARCHAR(45),
+
+    usuario_idusuario INT NOT NULL,
+    categoria_idcategoria INT NOT NULL,
+
+    CONSTRAINT fk_enquete_usuario
+        FOREIGN KEY (usuario_idusuario)
+        REFERENCES usuario(idusuario),
+
+    CONSTRAINT fk_enquete_categoria
+        FOREIGN KEY (categoria_idcategoria)
+        REFERENCES categoria(idcategoria)
+);
+
+CREATE TABLE opcao_resposta (
+    idopcao INT AUTO_INCREMENT PRIMARY KEY,
+    descricao_opcao VARCHAR(45) NOT NULL,
+
+    enquete_idenquete INT NOT NULL,
+
+    CONSTRAINT fk_opcao_enquete
+        FOREIGN KEY (enquete_idenquete)
+        REFERENCES enquete(idenquete)
+);
+CREATE TABLE voto (
+    idvoto INT AUTO_INCREMENT PRIMARY KEY,
+
+    data_hora_voto DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+    usuario_idusuario INT NOT NULL,
+    enquete_idenquete INT NOT NULL,
+    opcao_resposta_idopcao INT NOT NULL,
+
+    CONSTRAINT fk_voto_usuario
+        FOREIGN KEY (usuario_idusuario)
+        REFERENCES usuario(idusuario),
+
+    CONSTRAINT fk_voto_enquete
+        FOREIGN KEY (enquete_idenquete)
+        REFERENCES enquete(idenquete),
+
+    CONSTRAINT fk_voto_opcao
+        FOREIGN KEY (opcao_resposta_idopcao)
+        REFERENCES opcao_resposta(idopcao)
+);
