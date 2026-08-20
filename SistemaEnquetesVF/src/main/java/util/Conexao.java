@@ -8,7 +8,7 @@ public final class Conexao {
 
     private static final String URL = System.getenv().getOrDefault(
             "SISTEMA_ENQUETES_DB_URL",
-            "jdbc:mysql://localhost:3306/sistema_enquetes?useUnicode=true&characterEncoding=UTF-8&serverTimezone=America/Bahia"
+            "jdbc:mysql://localhost:3306/sistema_enquetes?useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_unicode_ci&serverTimezone=America/Bahia"
     );
 
     private static final String USUARIO = System.getenv().getOrDefault(

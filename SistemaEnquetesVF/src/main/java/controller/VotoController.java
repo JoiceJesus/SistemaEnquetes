@@ -1,8 +1,10 @@
 package controller;
 
 import java.io.IOException;
-import java.time.LocalDateTime;
-import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
@@ -12,11 +14,13 @@ import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
 
 import dao.EnqueteDAO;
+import dao.OpcaoRespostaDAO;
 import dao.VotoDAO;
 import model.EnqueteModel;
+import model.OpcaoRespostaModel;
 import model.UsuarioModel;
 import model.VotoModel;
-import model.OpcaoRespostaModel;
+import util.DataHoraUtil;
 
 @WebServlet("/voto")
 public class VotoController extends HttpServlet {
@@ -24,85 +28,117 @@ public class VotoController extends HttpServlet {
     private static final long serialVersionUID = 1L;
     private VotoDAO votoDAO;
     private EnqueteDAO enqueteDAO;
+    private OpcaoRespostaDAO opcaoDAO;
 
     @Override
     public void init() {
         votoDAO = new VotoDAO();
         enqueteDAO = new EnqueteDAO();
+        opcaoDAO = new OpcaoRespostaDAO();
     }
 
     @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-
-        request.setCharacterEncoding("UTF-8");
         HttpSession session = request.getSession(false);
-        UsuarioModel usuario = session == null ? null
-                : (UsuarioModel) session.getAttribute("usuarioLogado");
+        UsuarioModel usuario = session == null ? null : (UsuarioModel) session.getAttribute("usuarioLogado");
         if (usuario == null) {
-            response.sendRedirect(request.getContextPath() + "/index.jsp");
+            response.sendRedirect(request.getContextPath() + "/inicio?login=necessario");
             return;
         }
 
-        int idEnquete = Integer.parseInt(request.getParameter("idEnquete"));
-        String[] opcoes = request.getParameterValues("idOpcao");
-        String ip = request.getRemoteAddr();
+        Integer idEnquete = parseInt(request.getParameter("idEnquete"));
+        if (idEnquete == null) {
+            response.sendRedirect(request.getContextPath() + "/dashboard?erro=votoInvalido");
+            return;
+        }
 
         EnqueteModel enquete = enqueteDAO.buscarPorId(idEnquete);
         if (enquete == null || !"EM_CURSO".equals(enquete.getStatus())
                 || enquete.getDataExpiracao() == null
-                || !enquete.getDataExpiracao().isAfter(LocalDateTime.now())) {
-            response.sendRedirect(request.getContextPath() + "/enquete?erro=encerrada");
+                || !enquete.getDataExpiracao().isAfter(DataHoraUtil.agora())) {
+            response.sendRedirect(request.getContextPath() + "/dashboard?erro=encerrada");
             return;
         }
 
-        if (opcoes == null || opcoes.length == 0) {
-            response.sendRedirect(request.getContextPath() + "/enquete?erro=semOpcao");
-            return;
-        }
-
-        if (votoDAO.usuarioJaVotou(usuario.getIdUsuario(), idEnquete)) {
-            response.sendRedirect(request.getContextPath() + "/enquete?erro=jaVotou");
-            return;
-        }
-
-        if (enquete.getLimiteVotosIp() > 0 && votoDAO.contarParticipantesPorIp(idEnquete) >= enquete.getLimiteVotosIp()
-                && !votoDAO.ipJaVotou(ip, idEnquete)) {
-            response.sendRedirect(request.getContextPath() + "/enquete?erro=limiteIp");
-            return;
-        }
-
-        if (enquete.getLimiteQuantidadeVotos() > 0
-                && votoDAO.contarVotosEnquete(idEnquete) >= enquete.getLimiteQuantidadeVotos()) {
-            response.sendRedirect(request.getContextPath() + "/enquete?erro=limiteTotal");
-            return;
-        }
-
-        if ("UNICA".equals(enquete.getTipoVotacao()) && opcoes.length != 1) {
-            response.sendRedirect(request.getContextPath() + "/enquete?erro=tipoVotacao");
-            return;
-        }
-
-        for (String opcaoId : Arrays.asList(opcoes)) {
-            try {
-                OpcaoRespostaModel opcao = new OpcaoRespostaModel();
-                opcao.setIdOpcao(Integer.parseInt(opcaoId));
-                VotoModel voto = new VotoModel();
-                voto.setDataHoraVoto(LocalDateTime.now());
-                voto.setUsuario(usuario);
-                voto.setEnquete(enquete);
-                voto.setOpcaoResposta(opcao);
-                voto.setIpVoto(ip);
-                if (!votoDAO.inserir(voto)) {
-                    response.sendRedirect(request.getContextPath() + "/enquete?erro=voto");
-                    return;
+        Set<Integer> idsOpcoes = new LinkedHashSet<>();
+        String[] valores = request.getParameterValues("idOpcao");
+        if (valores != null) {
+            for (String valor : valores) {
+                Integer id = parseInt(valor);
+                if (id != null) {
+                    idsOpcoes.add(id);
                 }
-            } catch (NumberFormatException e) {
-                response.sendRedirect(request.getContextPath() + "/enquete?erro=opcao");
+            }
+        }
+        if (idsOpcoes.isEmpty()) {
+            response.sendRedirect(request.getContextPath() + "/dashboard?erro=semOpcao");
+            return;
+        }
+        if ("UNICA".equals(enquete.getTipoVotacao()) && idsOpcoes.size() != 1) {
+            response.sendRedirect(request.getContextPath() + "/dashboard?erro=tipoVotacao");
+            return;
+        }
+
+        for (Integer idOpcao : idsOpcoes) {
+            if (!opcaoDAO.pertenceAEnquete(idOpcao, idEnquete)) {
+                response.sendRedirect(request.getContextPath() + "/dashboard?erro=opcao");
                 return;
             }
         }
 
-        response.sendRedirect(request.getContextPath() + "/enquete?sucesso=voto");
+        if (votoDAO.usuarioJaVotou(usuario.getIdUsuario(), idEnquete)) {
+            response.sendRedirect(request.getContextPath() + "/dashboard?erro=jaVotou");
+            return;
+        }
+
+        String ip = obterIp(request);
+        if (enquete.getLimiteVotosIp() > 0
+                && votoDAO.contarUsuariosPorIp(ip, idEnquete) >= enquete.getLimiteVotosIp()) {
+            response.sendRedirect(request.getContextPath() + "/dashboard?erro=limiteIp");
+            return;
+        }
+
+        int totalAtual = votoDAO.contarVotosEnquete(idEnquete);
+        if (enquete.getLimiteQuantidadeVotos() > 0
+                && totalAtual + idsOpcoes.size() > enquete.getLimiteQuantidadeVotos()) {
+            response.sendRedirect(request.getContextPath() + "/dashboard?erro=limiteTotal");
+            return;
+        }
+
+        List<VotoModel> votos = new ArrayList<>();
+        for (Integer idOpcao : idsOpcoes) {
+            OpcaoRespostaModel opcao = new OpcaoRespostaModel();
+            opcao.setIdOpcao(idOpcao);
+            VotoModel voto = new VotoModel();
+            voto.setDataHoraVoto(DataHoraUtil.agora());
+            voto.setIpVoto(ip);
+            voto.setUsuario(usuario);
+            voto.setEnquete(enquete);
+            voto.setOpcaoResposta(opcao);
+            votos.add(voto);
+        }
+
+        if (!votoDAO.inserirLote(votos)) {
+            response.sendRedirect(request.getContextPath() + "/dashboard?erro=voto");
+            return;
+        }
+        response.sendRedirect(request.getContextPath() + "/dashboard?msg=votoRegistrado");
+    }
+
+    private static String obterIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            return forwarded.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
+    }
+
+    private static Integer parseInt(String valor) {
+        try {
+            return Integer.valueOf(valor);
+        } catch (Exception e) {
+            return null;
+        }
     }
 }

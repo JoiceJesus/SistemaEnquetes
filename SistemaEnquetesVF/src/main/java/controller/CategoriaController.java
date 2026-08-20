@@ -1,10 +1,6 @@
 package controller;
 
 import java.io.IOException;
-import java.util.List;
-
-import dao.CategoriaDAO;
-import model.CategoriaModel;
 
 import javax.servlet.ServletException;
 import javax.servlet.annotation.WebServlet;
@@ -12,13 +8,15 @@ import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.servlet.http.HttpSession;
+
+import dao.CategoriaDAO;
+import model.CategoriaModel;
 import model.UsuarioModel;
 
 @WebServlet("/categoria")
 public class CategoriaController extends HttpServlet {
 
     private static final long serialVersionUID = 1L;
-
     private CategoriaDAO dao;
 
     @Override
@@ -27,110 +25,93 @@ public class CategoriaController extends HttpServlet {
     }
 
     @Override
-    protected void doGet(
-            HttpServletRequest request,
-            HttpServletResponse response)
+    protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-
-        HttpSession session = request.getSession(false);
-        UsuarioModel logado = session == null ? null : (UsuarioModel) session.getAttribute("usuarioLogado");
-        if (logado == null || logado.getNivelAcesso().getIdNivelAcesso() != 2) {
+        if (!ehAdmin(request)) {
             response.sendError(HttpServletResponse.SC_FORBIDDEN);
             return;
         }
 
         String acao = request.getParameter("acao");
-
-        if (acao == null || acao.equals("listar")) {
-
-            List<CategoriaModel> lista =
-                dao.listarTodos();
-
-            request.setAttribute("categorias", lista);
-
-            request.getRequestDispatcher(
-                "/categoria.jsp"
-            ).forward(request, response);
-
-        } else if (acao.equals("novo")) {
-
-            request.getRequestDispatcher("/categoria-form.jsp").forward(request, response);
-
-        } else if (acao.equals("editar")) {
-
-            int id = Integer.parseInt(
-                request.getParameter("id")
-            );
-
-            CategoriaModel categoria =
-                dao.buscarPorId(id);
-
-            request.setAttribute(
-                "categoria",
-                categoria
-            );
-
-            request.getRequestDispatcher(
-                "/categoria-form.jsp"
-            ).forward(request, response);
-
-        } else if (acao.equals("excluir")) {
-
-            int id = Integer.parseInt(
-                request.getParameter("id")
-            );
-
-            dao.excluir(id);
-
-            response.sendRedirect(
-                request.getContextPath()
-                + "/categoria?acao=listar"
-            );
+        if (acao == null || "listar".equals(acao)) {
+            request.setAttribute("categorias", dao.listarTodos());
+            request.getRequestDispatcher("/WEB-INF/views/categoria.jsp").forward(request, response);
+            return;
         }
+
+        if ("novo".equals(acao)) {
+            request.getRequestDispatcher("/WEB-INF/views/categoria-form.jsp").forward(request, response);
+            return;
+        }
+
+        if ("editar".equals(acao)) {
+            Integer id = parseInt(request.getParameter("id"));
+            CategoriaModel categoria = id == null ? null : dao.buscarPorId(id);
+            if (categoria == null) {
+                response.sendError(HttpServletResponse.SC_NOT_FOUND);
+                return;
+            }
+            request.setAttribute("categoria", categoria);
+            request.getRequestDispatcher("/WEB-INF/views/categoria-form.jsp").forward(request, response);
+            return;
+        }
+
+        response.sendError(HttpServletResponse.SC_BAD_REQUEST);
     }
 
     @Override
-    protected void doPost(
-            HttpServletRequest request,
-            HttpServletResponse response)
+    protected void doPost(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
-
-        request.setCharacterEncoding("UTF-8");
-
-        HttpSession session = request.getSession(false);
-        UsuarioModel logado = session == null ? null : (UsuarioModel) session.getAttribute("usuarioLogado");
-        if (logado == null || logado.getNivelAcesso().getIdNivelAcesso() != 2) {
+        if (!ehAdmin(request)) {
             response.sendError(HttpServletResponse.SC_FORBIDDEN);
             return;
         }
 
         String acao = request.getParameter("acao");
-
-        CategoriaModel categoria =
-            new CategoriaModel();
-
-        categoria.setNomeCategoria(
-            request.getParameter("nomeCategoria")
-        );
-
-        if ("atualizar".equals(acao)) {
-
-            categoria.setIdCategoria(
-                Integer.parseInt(
-                    request.getParameter("idCategoria")
-                )
-            );
-
-            dao.atualizar(categoria);
-
-        } else {
-
-            dao.inserir(categoria);
+        if ("excluir".equals(acao)) {
+            Integer id = parseInt(request.getParameter("idCategoria"));
+            if (id == null) {
+                response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+                return;
+            }
+            boolean ok = dao.excluir(id);
+            response.sendRedirect(request.getContextPath() + "/categoria?acao=listar&" + (ok ? "msg=excluida" : "erro=emUso"));
+            return;
         }
 
-        response.sendRedirect(
-            request.getContextPath()
-            + "/categoria?acao=listar"
-        );
+        String nome = request.getParameter("nomeCategoria");
+        nome = nome == null ? "" : nome.trim();
+        Integer id = parseInt(request.getParameter("idCategoria"));
+        if (nome.length() < 2 || dao.nomeExiste(nome, id)) {
+            String destino = id == null ? "/categoria?acao=novo&erro=dados" : "/categoria?acao=editar&id=" + id + "&erro=dados";
+            response.sendRedirect(request.getContextPath() + destino);
+            return;
+        }
+
+        CategoriaModel categoria = new CategoriaModel();
+        categoria.setNomeCategoria(nome);
+        boolean ok;
+        if ("atualizar".equals(acao) && id != null) {
+            categoria.setIdCategoria(id);
+            ok = dao.atualizar(categoria);
+        } else {
+            ok = dao.inserir(categoria);
+        }
+        response.sendRedirect(request.getContextPath() + "/categoria?acao=listar&" + (ok ? "msg=salva" : "erro=salvar"));
+    }
+
+    private static boolean ehAdmin(HttpServletRequest request) {
+        HttpSession session = request.getSession(false);
+        UsuarioModel usuario = session == null ? null : (UsuarioModel) session.getAttribute("usuarioLogado");
+        return usuario != null && usuario.getNivelAcesso() != null
+                && usuario.getNivelAcesso().getIdNivelAcesso() == 2;
+    }
+
+    private static Integer parseInt(String valor) {
+        try {
+            return Integer.valueOf(valor);
+        } catch (Exception e) {
+            return null;
+        }
     }
 }
