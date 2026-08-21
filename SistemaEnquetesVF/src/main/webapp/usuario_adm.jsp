@@ -1,104 +1,85 @@
 <%@ page contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
-<%@ page import="java.util.*,java.time.format.DateTimeFormatter,model.*,dao.*" %>
+<%@ page import="java.util.*,java.time.format.DateTimeFormatter,model.*" %>
 <%!
-    private String esc(String s) {
-        if (s == null) return "";
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                .replace("\"", "&quot;").replace("'", "&#39;");
-    }
+private String esc(String s){ if(s==null)return ""; return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\"","&quot;").replace("'","&#39;"); }
+private String iniciais(String nome){ if(nome==null||nome.isBlank()) return "U"; String[] p=nome.trim().split("\\s+"); return (p[0].substring(0,1)+(p.length>1?p[p.length-1].substring(0,1):"")).toUpperCase(); }
 %>
 <%
-request.setCharacterEncoding("UTF-8");
-response.setCharacterEncoding("UTF-8");
-UsuarioModel usuario = (UsuarioModel) session.getAttribute("usuarioLogado");
-if (usuario == null) { response.sendRedirect(request.getContextPath() + "/index.jsp"); return; }
-if (usuario.getNivelAcesso() == null || usuario.getNivelAcesso().getIdNivelAcesso() != 2) { response.sendRedirect(request.getContextPath() + "/usuario_comum.jsp"); return; }
-
-EnqueteDAO enqueteDAO = new EnqueteDAO();
-VotoDAO votoDAO = new VotoDAO();
-UsuarioDAO usuarioDAO = new UsuarioDAO();
-enqueteDAO.atualizarEnquetesExpiradas();
-List<EnqueteModel> enquetes = enqueteDAO.listarTodos();
-int totalVotos = votoDAO.contarTodosVotos();
-int enquetesAtivas = enqueteDAO.contarPorStatus("EM_CURSO");
-int enquetesCriadas = 0;
-for (EnqueteModel e : enqueteDAO.listarTodos()) {
-    if (e.getUsuario() != null && e.getUsuario().getIdUsuario() == usuario.getIdUsuario()) {
-        enquetesCriadas++;
-    }
-}
-int totalUsuarios = usuarioDAO.listarTodos().size();
-String categoriaMaisVotada = votoDAO.buscarCategoriaMaisVotada();
-DateTimeFormatter dataHora = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+request.setCharacterEncoding("UTF-8"); response.setCharacterEncoding("UTF-8");
+UsuarioModel usuario=(UsuarioModel)session.getAttribute("usuarioLogado");
+if(usuario==null){response.sendRedirect(request.getContextPath()+"/index.jsp");return;}
+if(usuario.getNivelAcesso()==null||usuario.getNivelAcesso().getIdNivelAcesso()!=2){response.sendRedirect(request.getContextPath()+"/dashboard");return;}
+if(request.getAttribute("enquetes")==null){response.sendRedirect(request.getContextPath()+"/dashboard");return;}
+List<EnqueteModel> enquetes=(List<EnqueteModel>)request.getAttribute("enquetes");
+List<CategoriaModel> categorias=(List<CategoriaModel>)request.getAttribute("categorias");
+Map<Integer,List<OpcaoRespostaModel>> opcoes=(Map<Integer,List<OpcaoRespostaModel>>)request.getAttribute("opcoesPorEnquete");
+Map<Integer,Integer> total=(Map<Integer,Integer>)request.getAttribute("totalPorEnquete");
+Set<Integer> votadas=(Set<Integer>)request.getAttribute("enquetesVotadas");
+DateTimeFormatter dataFmt=DateTimeFormatter.ofPattern("dd/MM/yyyy");
 %>
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" id="html-root">
 <head>
-    <meta charset="UTF-8"><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>Painel Administrativo</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sistema de Enquetes - Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script><script>tailwind.config={darkMode:'class'};</script>
+<script src="https://unpkg.com/@phosphor-icons/web"></script>
+<script>if(localStorage.getItem('theme')==='dark'||(!('theme' in localStorage)&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark');}</script>
 </head>
-<body class="bg-slate-100 text-slate-900 min-h-screen">
-<header class="bg-white border-b sticky top-0 z-10">
-    <div class="max-w-7xl mx-auto px-5 py-4 flex flex-wrap items-center justify-between gap-4">
-        <div><h1 class="text-xl font-bold">Painel Administrativo</h1><p class="text-sm text-slate-500"><%=esc(usuario.getNome())%> • <%=esc(usuario.getEmail())%></p></div>
-        <nav class="flex flex-wrap items-center gap-3 text-sm">
-            <a class="text-indigo-700" href="<%=request.getContextPath()%>/dashboard">Início</a>
-            <a class="text-indigo-700" href="<%=request.getContextPath()%>/enquete?acao=listar">Enquetes</a>
-            <a class="text-indigo-700" href="<%=request.getContextPath()%>/categoria?acao=listar">Categorias</a>
-            <a class="text-indigo-700" href="<%=request.getContextPath()%>/usuario?acao=listar">Usuários</a>
-            <a class="text-red-600" href="<%=request.getContextPath()%>/usuario?acao=logout">Sair</a>
-        </nav>
-    </div>
-</header>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-100 antialiased font-sans min-h-screen flex flex-col transition-colors duration-300">
+<header class="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-40 transition-colors"><div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+<a href="<%=request.getContextPath()%>/dashboard" class="flex items-center gap-2"><img src="<%=request.getContextPath()%>/assets/img/logo.png" alt="Enquete Online Logo" class="h-20 w-auto object-contain"></a>
+<div class="hidden md:flex items-center flex-1 max-w-md mx-8"><div class="relative w-full"><i class="ph ph-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-lg"></i><input id="search-polls" type="text" placeholder="Buscar enquetes..." class="w-full pl-10 pr-4 py-2 bg-gray-50 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600 rounded-lg text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"></div></div>
+<div class="flex items-center gap-3"><button id="btn-theme-toggle" title="Alternar Tema" class="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"><i id="theme-icon" class="ph ph-moon text-xl"></i></button>
+<button id="btn-open-manage" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition-colors shadow-sm"><i class="ph ph-plus-circle text-lg"></i><span class="hidden sm:inline">Gerenciar Enquetes</span></button>
+<div class="h-6 w-px bg-gray-200 dark:bg-gray-700 mx-1"></div>
+<div class="relative" id="user-menu-container"><button id="btn-user-dropdown" class="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none"><div class="w-9 h-9 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300 rounded-full flex items-center justify-center font-bold text-sm shadow-sm"><%=iniciais(usuario.getNome())%></div><div class="hidden sm:block text-left"><p class="text-sm font-medium leading-none"><%=esc(usuario.getNome())%></p><span class="text-xs text-gray-500 dark:text-gray-400">Administrador</span></div><i class="ph ph-caret-down text-xs text-gray-500 ml-1"></i></button>
+<div id="user-dropdown" class="hidden absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 py-2 z-50"><div class="px-4 py-2 border-b border-gray-100 dark:border-gray-700"><p class="text-sm font-semibold"><%=esc(usuario.getNome())%></p><p class="text-xs text-gray-500 dark:text-gray-400 truncate"><%=esc(usuario.getEmail())%></p></div><div class="py-1"><a href="<%=request.getContextPath()%>/usuario?acao=listar" class="flex items-center gap-2.5 px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"><i class="ph ph-users-three text-lg text-gray-500"></i><span>Gerenciar Usuários</span></a><a href="<%=request.getContextPath()%>/categoria?acao=listar" class="flex items-center gap-2.5 px-4 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"><i class="ph ph-tag text-lg text-gray-500"></i><span>Gerenciar Categorias</span></a></div><div class="border-t border-gray-100 dark:border-gray-700 my-1"></div><div class="px-1"><a href="<%=request.getContextPath()%>/usuario?acao=logout" class="flex items-center gap-2.5 px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg transition-colors font-medium"><i class="ph ph-sign-out text-lg"></i><span>Sair da conta</span></a></div></div></div></div></div></header>
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow w-full">
+<% if(request.getParameter("sucesso")!=null){ %><div class="mb-5 rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/40 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300"><%= "voto".equals(request.getParameter("sucesso")) ? "Voto registrado com sucesso." : "Enquete salva com sucesso." %></div><% } %>
+<% if(request.getParameter("erro")!=null){ String er=request.getParameter("erro"); String msg="Não foi possível concluir a operação."; if("jaVotou".equals(er))msg="Você já votou nesta enquete."; else if("encerrada".equals(er))msg="Esta enquete está encerrada."; else if("semOpcao".equals(er))msg="Selecione pelo menos uma opção."; else if("limiteIp".equals(er))msg="O limite de participantes por IP foi atingido."; else if("limiteTotal".equals(er))msg="O limite total de votos desta enquete foi atingido."; else if("dataObrigatoria".equals(er))msg="Informe a data de término da enquete."; else if("dataInvalida".equals(er))msg="Data inválida. Use o formato dd/mm/aaaa."; else if("dataPassada".equals(er))msg="A data de término deve ser futura."; else if("categoriaInvalida".equals(er))msg="Selecione uma categoria válida."; else if("poucasOpcoes".equals(er))msg="Informe pelo menos duas opções diferentes."; else if("dadosInvalidos".equals(er))msg="Preencha corretamente todos os dados da enquete."; else if("falhaAtualizacao".equals(er))msg="Não foi possível atualizar a enquete."; else if("falhaCriacao".equals(er))msg="Não foi possível gravar a enquete no banco de dados."; else if("falhaOpcoes".equals(er))msg="A enquete não foi criada porque houve falha ao salvar as opções."; %><div class="mb-5 rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 px-4 py-3 text-sm text-red-700 dark:text-red-300"><%=msg%></div><% } %>
+<div class="bg-gradient-to-r from-indigo-600 to-violet-600 rounded-2xl p-6 sm:p-8 text-white mb-8 shadow-lg"><h1 class="text-2xl sm:text-3xl font-bold mb-2">Dê sua opinião e participe das decisões</h1><p class="text-indigo-100 max-w-2xl text-sm sm:text-base">Vote nas enquetes ativas da comunidade ou crie a sua própria votação para obter respostas em tempo real.</p></div>
+<section class="mb-8"><div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+<div class="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm"><p class="text-xs text-gray-500 dark:text-gray-400 font-medium">Total de Votos</p><p class="text-2xl font-bold"><%=request.getAttribute("totalVotos")%></p></div>
+<div class="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm"><p class="text-xs text-gray-500 dark:text-gray-400 font-medium">Enquetes Ativas</p><p class="text-2xl font-bold"><%=request.getAttribute("enquetesAtivas")%></p></div>
+<div class="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm"><p class="text-xs text-gray-500 dark:text-gray-400 font-medium">Enquetes Criadas por Você</p><p class="text-2xl font-bold"><%=request.getAttribute("enquetesCriadas")%></p></div>
+<div class="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm"><p class="text-xs text-gray-500 dark:text-gray-400 font-medium">Categoria Mais Votada</p><p class="text-lg font-bold"><%=esc(String.valueOf(request.getAttribute("categoriaMaisVotada")))%></p></div>
+</div></section>
+<section class="mb-8"><div class="flex items-center justify-between mb-4"><h2 class="text-lg font-bold flex items-center gap-2"><i class="ph ph-squares-four text-indigo-600 dark:text-indigo-400"></i> Categorias</h2></div><div class="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none"><button class="filter-cat bg-indigo-600 text-white px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap shadow-sm" data-cat="">Todas</button><% if(categorias!=null) for(CategoriaModel c:categorias){ %><button class="filter-cat bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors" data-cat="<%=esc(c.getNomeCategoria().toLowerCase())%>"><%=esc(c.getNomeCategoria())%></button><% } %></div></section>
+<section><div class="flex items-center justify-between mb-6"><h2 class="text-xl font-bold">Enquetes em Destaque</h2></div><div id="poll-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+<% if(enquetes==null||enquetes.isEmpty()){ %><div class="col-span-full bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8 text-center text-gray-500">Nenhuma enquete cadastrada ainda.</div><% } else { for(EnqueteModel e:enquetes){ List<OpcaoRespostaModel> ops=opcoes.get(e.getIdEnquete()); boolean ativa="EM_CURSO".equals(e.getStatus()); %>
+<div class="poll-card bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 flex flex-col justify-between hover:shadow-md transition-all" data-cat="<%=e.getCategoria()!=null?esc(e.getCategoria().getNomeCategoria().toLowerCase()):""%>" data-title="<%=esc(e.getTitulo().toLowerCase())%>"><div><div class="flex items-center justify-between mb-3"><span class="bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-md"><%=e.getCategoria()!=null?esc(e.getCategoria().getNomeCategoria()):"Sem categoria"%></span><span class="inline-flex items-center gap-1.5 <%=ativa?"bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300":"bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"%> text-xs font-medium px-2.5 py-1 rounded-full"><%=ativa?"Ativa":"Encerrada"%></span></div><h3 class="font-bold text-lg mb-1"><%=esc(e.getTitulo())%></h3><p class="text-gray-600 dark:text-gray-300 text-sm mb-4"><%=esc(e.getDescricao())%></p><p class="text-xs text-gray-500 mb-3"><%=total.getOrDefault(e.getIdEnquete(),0)%> votos • termina em <%=e.getDataExpiracao()!=null?e.getDataExpiracao().format(dataFmt):"-"%></p></div><div class="border-t border-gray-100 dark:border-gray-700 pt-4 flex items-center justify-between text-xs"><a class="text-indigo-600 dark:text-indigo-400 font-semibold" href="<%=request.getContextPath()%>/enquete?acao=editar&id=<%=e.getIdEnquete()%>">Editar</a><a class="text-slate-600 dark:text-slate-300 font-semibold" href="<%=request.getContextPath()%>/opcao?acao=listar&idEnquete=<%=e.getIdEnquete()%>">Opções</a><a class="text-red-600 font-semibold" onclick="return confirm('Excluir esta enquete e seus votos?')" href="<%=request.getContextPath()%>/enquete?acao=excluir&id=<%=e.getIdEnquete()%>">Excluir</a></div></div>
+<% }} %></div></section></main>
+<div id="manage-modal" class="fixed inset-0 bg-gray-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden"><div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden"><div class="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between bg-gray-50 dark:bg-gray-800/50"><div><h2 class="text-xl font-bold flex items-center gap-2"><i class="ph ph-sliders-horizontal text-indigo-600 dark:text-indigo-400"></i> Central de Gerenciamento de Enquetes</h2><p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Crie novas votações ou gerencie as enquetes já existentes.</p></div><button id="btn-close-modal" class="p-2 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700"><i class="ph ph-x text-xl"></i></button></div>
+<div class="flex border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-6"><button id="tab-btn-list" class="py-3 px-4 text-sm font-semibold border-b-2 border-indigo-600 text-indigo-600 dark:text-indigo-400 flex items-center gap-2"><i class="ph ph-list-bullets text-lg"></i> Enquetes Criadas</button><button id="tab-btn-create" class="py-3 px-4 text-sm font-semibold border-b-2 border-transparent text-gray-500 dark:text-gray-400 flex items-center gap-2"><i class="ph ph-plus-circle text-lg"></i> Criar Nova Enquete</button></div>
+<div class="p-6 overflow-y-auto"><div id="tab-content-list"><div class="space-y-3" id="my-polls-list"><% for(EnqueteModel e:enquetes){ %><div class="bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 p-4 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div class="space-y-1"><div class="flex items-center gap-2"><span class="bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold px-2 py-0.5 rounded"><%=esc(e.getCategoria().getNomeCategoria())%></span><span class="text-xs <%= "EM_CURSO".equals(e.getStatus())?"text-emerald-600 dark:text-emerald-400":"text-gray-500" %> font-semibold"><%= "EM_CURSO".equals(e.getStatus())?"● Em Votação":"Encerrada" %></span></div><h4 class="font-bold text-sm"><%=esc(e.getTitulo())%></h4><p class="text-xs text-gray-500 dark:text-gray-400">Criada em <%=e.getDataCriacao()!=null?e.getDataCriacao().format(dataFmt):"-"%> • <%=total.getOrDefault(e.getIdEnquete(),0)%> votos computados</p></div><div class="flex items-center gap-2"><a href="<%=request.getContextPath()%>/enquete?acao=editar&id=<%=e.getIdEnquete()%>" class="p-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg text-xs font-medium hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-1"><i class="ph ph-pencil-simple text-base text-indigo-600"></i> Editar</a></div></div><% } %></div></div>
+<div id="tab-content-create" class="hidden"><form id="modal-poll-form" method="post" action="<%=request.getContextPath()%>/enquete" class="space-y-6"><input type="hidden" name="acao" value="inserir"><div><label for="poll-title" class="block text-xs font-semibold uppercase tracking-wider mb-2">Título da Enquete *</label><input type="text" id="poll-title" name="titulo" required placeholder="Ex: Qual o melhor framework frontend para 2026?" class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600 rounded-lg text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"></div><div><label for="poll-desc" class="block text-xs font-semibold uppercase tracking-wider mb-2">Descrição *</label><textarea id="poll-desc" name="descricao" required rows="2" placeholder="Forneça um contexto para os eleitores..." class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600 rounded-lg text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all resize-none"></textarea></div>
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><label for="poll-category" class="block text-xs font-semibold uppercase tracking-wider mb-2">Categoria *</label><select id="poll-category" name="idCategoria" required class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"><% for(CategoriaModel c:categorias){%><option value="<%=c.getIdCategoria()%>"><%=esc(c.getNomeCategoria())%></option><%}%></select></div><div><label for="poll-type" class="block text-xs font-semibold uppercase tracking-wider mb-2">Tipo de Escolha *</label><select id="poll-type" name="tipoVotacao" class="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-white"><option value="UNICA">Voto Único (Radio Button)</option><option value="MULTIPLA">Voto Múltiplo (Checkbox)</option></select></div></div>
+<div><div class="flex items-center justify-between mb-2"><label class="block text-xs font-semibold uppercase tracking-wider">Opções de Resposta *</label><span class="text-xs text-gray-400">Mínimo de 2 opções</span></div><div id="options-container" class="space-y-3"><div class="flex items-center gap-2 option-row"><input type="text" name="opcao" required placeholder="Opção 1" class="option-input w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600 rounded-lg text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"><button type="button" class="btn-remove-option p-2.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg"><i class="ph ph-trash text-lg"></i></button></div><div class="flex items-center gap-2 option-row"><input type="text" name="opcao" required placeholder="Opção 2" class="option-input w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600 rounded-lg text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"><button type="button" class="btn-remove-option p-2.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg"><i class="ph ph-trash text-lg"></i></button></div></div><button type="button" id="btn-add-option" class="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-600 dark:text-indigo-400 hover:underline"><i class="ph ph-plus-circle text-lg"></i><span>Adicionar Opção</span></button></div>
+<div><label for="poll-end" class="block text-xs font-semibold uppercase tracking-wider mb-1.5">Data de Término (dd/mm/aaaa) *</label><input type="text" id="poll-end" name="dataExpiracao" required inputmode="numeric" maxlength="10" pattern="[0-9]{2}/[0-9]{2}/[0-9]{4}" autocomplete="off" placeholder="dd/mm/aaaa" title="Informe a data no formato dd/mm/aaaa" class="w-full px-3 py-2 bg-gray-50 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600 rounded-lg text-sm dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"><p id="poll-end-error" class="hidden mt-1.5 text-xs text-red-600 dark:text-red-400">Informe uma data válida no formato dd/mm/aaaa.</p><input type="hidden" name="limiteVotosIp" value="0"><input type="hidden" name="limiteQuantidadeVotos" value="0"></div>
+<div class="flex gap-3 pt-4 border-t border-gray-200 dark:border-gray-700"><button type="button" id="btn-cancel-create" class="w-1/2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 font-semibold py-3 px-4 rounded-lg text-sm">Cancelar</button><button type="submit" class="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-4 rounded-lg text-sm shadow-sm flex items-center justify-center gap-2"><i class="ph ph-check-circle text-lg"></i><span>Salvar e Publicar</span></button></div></form></div></div></div></div>
+<footer class="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 py-6 mt-12"><div class="max-w-7xl mx-auto px-4 text-center text-xs text-gray-500 dark:text-gray-400"><p>&copy; 2026 Enquete Online. Todos os direitos reservados.</p></div></footer>
+<script src="<%=request.getContextPath()%>/assets/js/script.js"></script><script>
+document.querySelectorAll('.filter-cat').forEach(b=>b.addEventListener('click',()=>{const c=b.dataset.cat;document.querySelectorAll('.poll-card').forEach(x=>x.classList.toggle('hidden',c&&x.dataset.cat!==c));}));const search=document.getElementById('search-polls');if(search)search.addEventListener('input',()=>{const q=search.value.toLowerCase();document.querySelectorAll('.poll-card').forEach(x=>x.classList.toggle('hidden',!x.dataset.title.includes(q)));});
 
-<main class="max-w-7xl mx-auto p-5 md:p-7">
-    <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
-        <div><h2 class="text-3xl font-bold">Olá, <%=esc(usuario.getNome())%></h2><p class="text-slate-500">Visão real do banco de dados do sistema.</p></div>
-        <a href="<%=request.getContextPath()%>/enquete?acao=novo" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-lg font-semibold">+ Criar enquete</a>
-    </div>
-
-    <div class="grid sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
-        <div class="bg-white rounded-xl border p-5"><p class="text-xs text-slate-500">Total de votos</p><p class="text-3xl font-bold"><%=totalVotos%></p></div>
-        <div class="bg-white rounded-xl border p-5"><p class="text-xs text-slate-500">Enquetes ativas</p><p class="text-3xl font-bold"><%=enquetesAtivas%></p></div>
-        <div class="bg-white rounded-xl border p-5"><p class="text-xs text-slate-500">Criadas por você</p><p class="text-3xl font-bold"><%=enquetesCriadas%></p></div>
-        <div class="bg-white rounded-xl border p-5"><p class="text-xs text-slate-500">Usuários cadastrados</p><p class="text-3xl font-bold"><%=totalUsuarios%></p></div>
-        <div class="bg-white rounded-xl border p-5"><p class="text-xs text-slate-500">Categoria mais votada</p><p class="text-lg font-bold"><%=esc(categoriaMaisVotada)%></p></div>
-    </div>
-
-    <section class="bg-white rounded-xl border overflow-hidden">
-        <div class="p-5 border-b flex flex-wrap justify-between items-center gap-3">
-            <div><h2 class="text-xl font-bold">Gerenciar enquetes</h2><p class="text-sm text-slate-500">Todas as enquetes abaixo vêm da tabela <code>enquete</code>.</p></div>
-            <a href="<%=request.getContextPath()%>/enquete?acao=listar" class="text-indigo-700 font-medium">Abrir tela completa →</a>
-        </div>
-        <% if (enquetes.isEmpty()) { %>
-            <div class="p-8 text-center text-slate-500">Nenhuma enquete cadastrada. Use “Criar enquete” para cadastrar a primeira.</div>
-        <% } else { %>
-        <div class="overflow-x-auto">
-            <table class="w-full text-sm">
-                <thead class="bg-slate-50"><tr><th class="text-left p-3">Título</th><th class="text-left p-3">Categoria</th><th class="text-left p-3">Status</th><th class="text-left p-3">Votos</th><th class="text-left p-3">Expiração</th><th class="text-left p-3">Criador</th><th class="text-left p-3">Ações</th></tr></thead>
-                <tbody>
-                <% for (EnqueteModel e : enquetes) { int votos = votoDAO.contarVotosEnquete(e.getIdEnquete()); %>
-                    <tr class="border-t align-top">
-                        <td class="p-3"><div class="font-semibold"><%=esc(e.getTitulo())%></div><div class="text-xs text-slate-500 mt-1 max-w-xs"><%=esc(e.getDescricao())%></div></td>
-                        <td class="p-3"><%=esc(e.getCategoria() == null ? "-" : e.getCategoria().getNomeCategoria())%></td>
-                        <td class="p-3"><span class="px-2 py-1 rounded-full text-xs <%= "EM_CURSO".equals(e.getStatus()) ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600" %>"><%= "EM_CURSO".equals(e.getStatus()) ? "Em curso" : "Encerrada" %></span></td>
-                        <td class="p-3"><%=votos%></td>
-                        <td class="p-3 whitespace-nowrap"><%=e.getDataExpiracao() == null ? "-" : e.getDataExpiracao().format(dataHora)%></td>
-                        <td class="p-3"><%=esc(e.getUsuario() == null ? "-" : e.getUsuario().getNome())%></td>
-                        <td class="p-3 whitespace-nowrap">
-                            <a class="text-indigo-700 mr-3" href="<%=request.getContextPath()%>/enquete?acao=editar&id=<%=e.getIdEnquete()%>">Editar</a>
-                            <a class="text-slate-700 mr-3" href="<%=request.getContextPath()%>/opcao?acao=listar&idEnquete=<%=e.getIdEnquete()%>">Opções</a>
-                            <a class="text-red-600" href="<%=request.getContextPath()%>/enquete?acao=excluir&id=<%=e.getIdEnquete()%>" onclick="return confirm('Excluir esta enquete e os votos vinculados a ela?')">Excluir</a>
-                        </td>
-                    </tr>
-                <% } %>
-                </tbody>
-            </table>
-        </div>
-        <% } %>
-    </section>
-</main>
-</body>
-</html>
+const pollEnd=document.getElementById('poll-end');
+const pollEndError=document.getElementById('poll-end-error');
+function mascaraDataBR(valor){
+  const d=valor.replace(/\D/g,'').slice(0,8);
+  if(d.length<=2)return d;
+  if(d.length<=4)return d.slice(0,2)+'/'+d.slice(2);
+  return d.slice(0,2)+'/'+d.slice(2,4)+'/'+d.slice(4);
+}
+function dataBRValida(valor){
+  if(!/^\d{2}\/\d{2}\/\d{4}$/.test(valor))return false;
+  const [dia,mes,ano]=valor.split('/').map(Number);
+  const dt=new Date(ano,mes-1,dia);
+  if(dt.getFullYear()!==ano||dt.getMonth()!==mes-1||dt.getDate()!==dia)return false;
+  const hoje=new Date(); hoje.setHours(0,0,0,0); dt.setHours(0,0,0,0);
+  return dt>=hoje;
+}
+if(pollEnd){
+  pollEnd.addEventListener('input',()=>{pollEnd.value=mascaraDataBR(pollEnd.value); if(pollEndError)pollEndError.classList.add('hidden'); pollEnd.setCustomValidity('');});
+  pollEnd.addEventListener('blur',()=>{if(pollEnd.value && !dataBRValida(pollEnd.value)){pollEnd.setCustomValidity('Informe uma data válida no formato dd/mm/aaaa.'); if(pollEndError)pollEndError.classList.remove('hidden');}else{pollEnd.setCustomValidity(''); if(pollEndError)pollEndError.classList.add('hidden');}});
+}
+</script></body></html>

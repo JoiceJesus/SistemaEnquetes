@@ -1,199 +1,367 @@
 <%@ page contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
-<%@ page import="java.util.*,model.*,dao.*" %>
-<%!
-    private String esc(String s) {
-        if (s == null) return "";
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                .replace("\"", "&quot;").replace("'", "&#39;");
-    }
-%>
+<%@ page import="dao.EnqueteDAO,dao.UsuarioDAO,dao.VotoDAO" %>
 <%
-request.setCharacterEncoding("UTF-8");
-response.setCharacterEncoding("UTF-8");
-
-EnqueteDAO enqueteDAO = new EnqueteDAO();
-OpcaoRespostaDAO opcaoDAO = new OpcaoRespostaDAO();
-VotoDAO votoDAO = new VotoDAO();
-UsuarioModel logado = (UsuarioModel) session.getAttribute("usuarioLogado");
-
-enqueteDAO.atualizarEnquetesExpiradas();
-List<EnqueteModel> todas = enqueteDAO.listarTodos();
-List<EnqueteModel> destaques = new ArrayList<EnqueteModel>();
-for (EnqueteModel e : todas) {
-    if ("EM_CURSO".equals(e.getStatus())) destaques.add(e);
-}
-Collections.sort(destaques, new Comparator<EnqueteModel>() {
-    public int compare(EnqueteModel a, EnqueteModel b) {
-        return Integer.compare(votoDAO.contarVotosEnquete(b.getIdEnquete()), votoDAO.contarVotosEnquete(a.getIdEnquete()));
-    }
-});
-if (destaques.size() > 3) destaques = new ArrayList<EnqueteModel>(destaques.subList(0, 3));
-
-int totalVotos = votoDAO.contarTodosVotos();
-int totalAtivas = enqueteDAO.contarPorStatus("EM_CURSO");
-String categoriaMaisVotada = votoDAO.buscarCategoriaMaisVotada();
-String erro = (String) request.getAttribute("erro");
-boolean cadastroSucesso = "sucesso".equals(request.getParameter("cadastro"));
+request.setCharacterEncoding("UTF-8"); response.setCharacterEncoding("UTF-8");
+EnqueteDAO homeEnqueteDAO = new EnqueteDAO();
+VotoDAO homeVotoDAO = new VotoDAO();
+UsuarioDAO homeUsuarioDAO = new UsuarioDAO();
+homeEnqueteDAO.atualizarEnquetesExpiradas();
+int homeTotalVotos = homeVotoDAO.contarTodosVotos();
+int homeAtivas = homeEnqueteDAO.contarPorStatus("EM_CURSO");
+int homeUsuarios = homeUsuarioDAO.listarTodos().size();
 %>
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistema de Enquetes</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enquete - Plataforma de Votações e Enquetes</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    // Configuração do Tailwind para alternar modo escuro via classe
+    tailwind.config = {
+      darkMode: 'class',
+    }
+  </script>
+
+  <!-- Script para carregar a preferência de tema antes da renderização -->
+  <script>
+    if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  </script>
+
+  <!-- Ícones Phosphor -->
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
 </head>
-<body class="bg-slate-50 text-slate-900 min-h-screen">
-<header class="bg-white border-b">
-    <div class="max-w-7xl mx-auto px-5 py-4 flex flex-wrap items-center justify-between gap-3">
-        <a href="<%=request.getContextPath()%>/index.jsp" class="text-xl font-bold text-indigo-700">Sistema de Enquetes</a>
-        <div class="flex items-center gap-3 text-sm">
-            <a href="#destaques" class="text-slate-600 hover:text-indigo-700">Enquetes em destaque</a>
-            <% if (logado != null) { %>
-                <a href="<%=request.getContextPath()%>/dashboard" class="bg-indigo-600 text-white px-4 py-2 rounded-lg">Ir para meu painel</a>
-                <a href="<%=request.getContextPath()%>/usuario?acao=logout" class="text-red-600">Sair</a>
-            <% } %>
-        </div>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 antialiased font-sans min-h-screen flex flex-col justify-between transition-colors duration-200">
+
+  <!-- ================= NAVBAR ================= -->
+  <header class="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-40 transition-colors">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- Logo -->
+      <a href="index.jsp" class="flex items-center gap-2">
+        <img src="assets/img/logo.png" alt="Enquete Online Logo" class="h-20 w-auto object-contain">
+      </a>
+
+      <!-- Links Rápidos -->
+      <nav class="hidden md:flex items-center gap-6 text-sm font-medium text-gray-600 dark:text-gray-300">
+        <a href="#recursos" class="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"></a>
+        <a href="enquete?acao=listar" class="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"></a>
+        <a href="index.jsp" class="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"></a>
+      </nav>
+
+      <!-- Botão de Ação Rápida e Botão de Tema -->
+      <div class="flex items-center gap-3">
+        <!-- BOTÃO DE ALTERAR TEMA -->
+        <button onclick="toggleDarkMode()" aria-label="Alternar modo escuro" class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none transition-colors">
+          <i id="theme-toggle-dark-icon" class="ph ph-moon text-xl hidden dark:block"></i>
+          <i id="theme-toggle-light-icon" class="ph ph-sun text-xl block dark:hidden"></i>
+        </button>
+
+        <button onclick="switchTab('register'); document.getElementById('auth-card').scrollIntoView({behavior: 'smooth'});" class="bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 px-4 py-2 rounded-lg text-sm font-semibold transition-colors border border-indigo-100 dark:border-indigo-800">
+          Criar Conta
+        </button>
+      </div>
     </div>
-</header>
+  </header>
 
-<main>
-    <section class="max-w-7xl mx-auto px-5 py-10 grid lg:grid-cols-2 gap-10 items-start">
+  <!-- ================= CONTEÚDO PRINCIPAL (SPLIT HERO) ================= -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12 flex-grow flex items-center">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center w-full">
+
+      <!-- COLUNA DA ESQUERDA: APRESENTAÇÃO DA PLATAFORMA -->
+      <div class="lg:col-span-7 space-y-8">
+        
+        <!-- Badge -->
+        <div class="inline-flex items-center gap-2 bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 px-3.5 py-1.5 rounded-full text-xs font-semibold">
+          <i class="ph ph-sparkle text-sm"></i>
+          <span>Plataforma de Decisões Colaborativas</span>
+        </div>
+
+        <!-- Título principal -->
+        <h1 class="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-gray-900 dark:text-gray-100 tracking-tight leading-tight">
+          Sua voz conta. Suas decisões transformam a comunidade.
+        </h1>
+
+        <p class="text-base sm:text-lg text-gray-600 dark:text-gray-300 max-w-2xl leading-relaxed">
+          Participe de votações em tempo real, acompanhe estatísticas transparentes e crie enquetes para engajar seu público em uma plataforma simples e segura.
+        </p>
+
+        <!-- CARDS DE MÉTRICAS -->
+        <div class="grid grid-cols-3 gap-4 pt-2">
+          <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
+            <p class="text-2xl font-bold text-indigo-600 dark:text-indigo-400"><%=homeTotalVotos%></p>
+            <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mt-0.5">Votos Computados</p>
+          </div>
+          <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
+            <p class="text-2xl font-bold text-emerald-600 dark:text-emerald-400"><%=homeUsuarios%></p>
+            <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mt-0.5">Usuários Cadastrados</p>
+          </div>
+          <div class="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm transition-colors">
+            <p class="text-2xl font-bold text-amber-600 dark:text-amber-400"><%=homeAtivas%></p>
+            <p class="text-xs text-gray-500 dark:text-gray-400 font-medium mt-0.5">Enquetes Ativas</p>
+          </div>
+        </div>
+
+        <!-- RECURSOS DO SISTEMA -->
+        <div id="recursos" class="space-y-3 pt-2">
+          <div class="flex items-start gap-3">
+            <div class="p-1.5 bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 rounded-lg mt-0.5">
+              <i class="ph ph-check text-base"></i>
+            </div>
+            <div>
+              <h4 class="text-sm font-bold text-gray-900 dark:text-gray-100">Perfis de Acesso Diferenciados</h4>
+              <p class="text-xs text-gray-500 dark:text-gray-400">Escolha entre perfil <strong>Comum</strong> (apenas votar) e <strong>Criador</strong> (votar e gerenciar enquetes).</p>
+            </div>
+          </div>
+
+          <div class="flex items-start gap-3">
+            <div class="p-1.5 bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 rounded-lg mt-0.5">
+              <i class="ph ph-chart-pie-slice text-base"></i>
+            </div>
+            <div>
+              <h4 class="text-sm font-bold text-gray-900 dark:text-gray-100">Estatísticas e Gráficos Instantâneos</h4>
+              <p class="text-xs text-gray-500 dark:text-gray-400">Acompanhe a apuração percentual e a distribuição de votos por opção em tempo real.</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- COLUNA DA DIREITA: CARD DE AUTENTICAÇÃO -->
+      <div id="auth-card" class="lg:col-span-5 w-full max-w-md mx-auto">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden transition-colors">
+          
+          <!-- Alternador de Abas (Tabs) -->
+          <div class="flex border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+            <button id="tab-login" onclick="switchTab('login')" class="flex-1 py-3.5 text-sm font-semibold text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400 transition-all">
+              Entrar
+            </button>
+            <button id="tab-register" onclick="switchTab('register')" class="flex-1 py-3.5 text-sm font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-all">
+              Criar Conta
+            </button>
+          </div>
+
+          <div class="p-6 sm:p-8">
+            <% if(request.getAttribute("erro")!=null){ %><div class="mb-4 rounded-lg bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900 px-3 py-2 text-xs text-red-700 dark:text-red-300"><%=request.getAttribute("erro")%></div><% } %>
+            <% if("sucesso".equals(request.getParameter("cadastro"))){ %><div class="mb-4 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">Cadastro realizado com sucesso. Faça login para continuar.</div><% } %>
+
+            <!-- ================= FORMULÁRIO DE LOGIN ================= -->
+            <form id="form-login" class="space-y-4" method="post" action="usuario">
+              <input type="hidden" name="acao" value="login">
+              
+              <!-- E-mail -->
+              <div>
+                <label for="login-email" class="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1">E-mail</label>
+                <div class="relative">
+                  <i class="ph ph-envelope-simple absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 text-lg"></i>
+                  <input type="email" id="login-email" name="email" required placeholder="seu@email.com" class="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white dark:focus:bg-gray-700 transition-all">
+                </div>
+              </div>
+
+              <!-- Senha -->
+              <div>
+                <div class="flex justify-between items-center mb-1">
+                  <label for="login-senha" class="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Senha</label>
+                  <button type="button" onclick="toggleModal(true)" class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-medium focus:outline-none">
+                    Esqueceu?
+                  </button>
+                </div>
+                <div class="relative">
+                  <i class="ph ph-lock-key absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 text-lg"></i>
+                  <input type="password" id="login-senha" name="senha" required placeholder="••••••••" class="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white dark:focus:bg-gray-700 transition-all">
+                </div>
+              </div>
+
+              <!-- Lembrar-me -->
+              <div class="flex items-center justify-between pt-1">
+                <label class="flex items-center cursor-pointer">
+                  <input type="checkbox" class="rounded border-gray-300 dark:border-gray-600 dark:bg-gray-700 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
+                  <span class="ml-2 text-xs text-gray-600 dark:text-gray-400">Lembrar neste navegador</span>
+                </label>
+              </div>
+
+              <!-- Botão Entrar -->
+              <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-4 rounded-lg text-sm shadow-sm transition-colors flex items-center justify-center gap-2 mt-2">
+                <span>Entrar na conta</span>
+                <i class="ph ph-arrow-right text-lg"></i>
+              </button>
+            </form>
+
+            <!-- ================= FORMULÁRIO DE CADASTRO ================= -->
+            <form id="form-register" class="space-y-4 hidden" method="post" action="usuario">
+              <input type="hidden" name="acao" value="cadastro">
+              
+              <!-- Nome -->
+              <div>
+                <label for="reg-nome" class="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1">Nome Completo</label>
+                <div class="relative">
+                  <i class="ph ph-user absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 text-lg"></i>
+                  <input type="text" id="reg-nome" name="nome" required placeholder="Ex: João da Silva" class="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white dark:focus:bg-gray-700 transition-all">
+                </div>
+              </div>
+
+              <!-- E-mail -->
+              <div>
+                <label for="reg-email" class="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1">E-mail</label>
+                <div class="relative">
+                  <i class="ph ph-envelope-simple absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 text-lg"></i>
+                  <input type="email" id="reg-email" name="email" required placeholder="seu@email.com" class="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white dark:focus:bg-gray-700 transition-all">
+                </div>
+              </div>
+
+              <!-- Senha -->
+              <div>
+                <label for="reg-senha" class="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1">Senha</label>
+                <div class="relative">
+                  <i class="ph ph-lock-key absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 text-lg"></i>
+                  <input type="password" id="reg-senha" name="senha" required placeholder="Crie uma senha forte" class="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white dark:focus:bg-gray-700 transition-all">
+                </div>
+              </div>
+
+              <!-- Tipo de Usuário -->
+              <div>
+                <label for="reg-tipo" class="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1">Tipo de Perfil</label>
+                <div class="relative">
+                  <i class="ph ph-user-gear absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 text-lg"></i>
+                  <select id="reg-tipo" name="tipo" class="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white dark:focus:bg-gray-700 transition-all text-gray-700 dark:text-gray-100">
+                    <option value="comum">Comum (Apenas Votar)</option>
+                    <option value="administrador">Administrador (Gerenciar o sistema)</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Botão Cadastrar -->
+              <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-4 rounded-lg text-sm shadow-sm transition-colors flex items-center justify-center gap-2 mt-2">
+                <span>Criar minha conta</span>
+                <i class="ph ph-check-circle text-lg"></i>
+              </button>
+            </form>
+
+          </div>
+        </div>
+
+        <!-- Links Auxiliares -->
+        <div class="text-center mt-4 flex justify-center gap-3">
+          <% model.UsuarioModel homeLogado=(model.UsuarioModel)session.getAttribute("usuarioLogado"); boolean homeAdmin=homeLogado!=null&&homeLogado.getNivelAcesso()!=null&&homeLogado.getNivelAcesso().getIdNivelAcesso()==2; %><a href="<%= homeAdmin ? request.getContextPath()+"/enquete?acao=novo" : (homeLogado!=null ? request.getContextPath()+"/dashboard" : "#auth-card") %>" onclick="<%= homeLogado == null ? "switchTab(\'login\')" : "" %>" class="text-xs text-indigo-600 hover:underline font-medium">Criar enquete</a>
+          <a href="enquete?acao=listar" class="text-xs text-indigo-600 hover:underline font-medium">Votar em enquete</a>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- ================= FOOTER ================= -->
+  <footer class="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 py-4 mt-8 transition-colors">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between text-xs text-gray-500 dark:text-gray-400 gap-2">
+      <p>&copy; 2026 Sistema de Enquetes. Todos os direitos reservados.</p>
+      <div class="flex gap-4">
+        <a href="#" class="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">Termos de Uso</a>
+        <a href="#" class="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">Privacidade</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ================= POP-UP / MODAL (RECUPERAR SENHA) ================= -->
+  <div id="modal-forgot-password" class="fixed inset-0 bg-gray-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden transition-opacity">
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 w-full max-w-sm p-6 relative transition-colors">
+      
+      <!-- Botão Fechar -->
+      <button onclick="toggleModal(false)" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+        <i class="ph ph-x text-lg"></i>
+      </button>
+
+      <!-- Ícone e Título -->
+      <div class="text-center mb-6">
+        <div class="w-12 h-12 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-3 text-xl">
+          <i class="ph ph-key-hole"></i>
+        </div>
+        <h2 class="text-lg font-bold text-gray-900 dark:text-gray-100">Recuperar Senha</h2>
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Informe seu e-mail cadastrado para receber as instruções de redefinição.</p>
+      </div>
+
+      <!-- Formulário do Modal -->
+      <form onsubmit="handleResetPassword(event)" class="space-y-4">
         <div>
-            <span class="inline-block text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-full">Votações com dados reais do sistema</span>
-            <h1 class="text-4xl md:text-5xl font-extrabold mt-4 leading-tight">Participe, acompanhe e gerencie enquetes em um só lugar.</h1>
-            <p class="text-slate-600 text-lg mt-4 max-w-2xl">As enquetes, votos e resultados mostrados nesta página são carregados diretamente do banco <strong>sistema_enquetes</strong>.</p>
-
-            <div class="grid sm:grid-cols-3 gap-4 mt-8">
-                <div class="bg-white border rounded-xl p-4 shadow-sm">
-                    <p class="text-3xl font-bold text-indigo-700"><%=totalVotos%></p>
-                    <p class="text-sm text-slate-500">Votos registrados</p>
-                </div>
-                <div class="bg-white border rounded-xl p-4 shadow-sm">
-                    <p class="text-3xl font-bold text-emerald-700"><%=totalAtivas%></p>
-                    <p class="text-sm text-slate-500">Enquetes ativas</p>
-                </div>
-                <div class="bg-white border rounded-xl p-4 shadow-sm">
-                    <p class="text-lg font-bold text-amber-700"><%=esc(categoriaMaisVotada)%></p>
-                    <p class="text-sm text-slate-500">Categoria mais votada</p>
-                </div>
-            </div>
+          <label for="recovery-email" class="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1">E-mail Cadastrado</label>
+          <div class="relative">
+            <i class="ph ph-envelope-simple absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 text-lg"></i>
+            <input type="email" id="recovery-email" required placeholder="seu@email.com" class="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white dark:focus:bg-gray-700 transition-all">
+          </div>
         </div>
 
-        <% if (logado == null) { %>
-        <div id="acesso" class="bg-white border rounded-2xl shadow-sm overflow-hidden">
-            <div class="grid grid-cols-2 border-b">
-                <button id="btnLogin" type="button" onclick="mostrarAba('login')" class="py-3 font-semibold text-indigo-700 border-b-2 border-indigo-600">Entrar</button>
-                <button id="btnCadastro" type="button" onclick="mostrarAba('cadastro')" class="py-3 font-semibold text-slate-500">Criar conta</button>
-            </div>
-            <div class="p-6">
-                <% if (erro != null) { %><div class="mb-4 bg-red-50 border border-red-200 text-red-700 rounded-lg p-3"><%=esc(erro)%></div><% } %>
-                <% if (cadastroSucesso) { %><div class="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-lg p-3">Cadastro realizado com sucesso. Faça seu login.</div><% } %>
-
-                <form id="formLogin" method="post" action="<%=request.getContextPath()%>/usuario" class="space-y-4">
-                    <input type="hidden" name="acao" value="login">
-                    <div><label class="block text-sm font-medium mb-1">E-mail</label><input type="email" name="email" required class="w-full border rounded-lg px-3 py-2" placeholder="seu@email.com"></div>
-                    <div><label class="block text-sm font-medium mb-1">Senha</label><input type="password" name="senha" required class="w-full border rounded-lg px-3 py-2" placeholder="Sua senha"></div>
-                    <button class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg py-2.5">Entrar</button>
-                </form>
-
-                <form id="formCadastro" method="post" action="<%=request.getContextPath()%>/usuario" class="space-y-4 hidden">
-                    <input type="hidden" name="acao" value="cadastro">
-                    <div><label class="block text-sm font-medium mb-1">Nome completo</label><input type="text" name="nome" required maxlength="100" class="w-full border rounded-lg px-3 py-2" placeholder="Seu nome"></div>
-                    <div><label class="block text-sm font-medium mb-1">E-mail</label><input type="email" name="email" required maxlength="150" class="w-full border rounded-lg px-3 py-2" placeholder="seu@email.com"></div>
-                    <div><label class="block text-sm font-medium mb-1">Senha</label><input type="password" name="senha" required class="w-full border rounded-lg px-3 py-2" placeholder="Crie uma senha"></div>
-                    <div>
-                        <label class="block text-sm font-medium mb-1">Tipo de perfil</label>
-                        <select name="tipo" required class="w-full border rounded-lg px-3 py-2">
-                            <option value="comum">Usuário comum</option>
-                            <option value="administrador">Administrador</option>
-                        </select>
-                    </div>
-                    <button class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg py-2.5">Criar conta</button>
-                </form>
-            </div>
+        <div class="flex gap-2 pt-2">
+          <button type="button" onclick="toggleModal(false)" class="w-1/2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 font-semibold py-2 px-4 rounded-lg text-sm transition-colors">
+            Cancelar
+          </button>
+          <button type="submit" class="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg text-sm shadow-sm transition-colors">
+            Enviar Link
+          </button>
         </div>
-        <% } else { %>
-        <div class="bg-white border rounded-2xl shadow-sm p-6">
-            <p class="text-sm text-slate-500">Sessão ativa</p>
-            <h2 class="text-2xl font-bold mt-1"><%=esc(logado.getNome())%></h2>
-            <p class="text-slate-600"><%=esc(logado.getEmail())%></p>
-            <div class="flex flex-wrap gap-3 mt-5">
-                <a href="<%=request.getContextPath()%>/dashboard" class="bg-indigo-600 text-white px-4 py-2 rounded-lg">Abrir meu painel</a>
-                <% if (logado.getNivelAcesso() != null && logado.getNivelAcesso().getIdNivelAcesso() == 2) { %>
-                <a href="<%=request.getContextPath()%>/enquete?acao=novo" class="border border-indigo-600 text-indigo-700 px-4 py-2 rounded-lg">Criar enquete</a>
-                <% } %>
-            </div>
-        </div>
-        <% } %>
-    </section>
+      </form>
 
-    <section id="destaques" class="bg-white border-y">
-        <div class="max-w-7xl mx-auto px-5 py-10">
-            <div class="flex flex-wrap items-end justify-between gap-3 mb-6">
-                <div>
-                    <h2 class="text-2xl font-bold">Enquetes em destaque</h2>
-                    <p class="text-slate-500">As enquetes ativas com mais votos neste momento.</p>
-                </div>
-                <% if (logado != null) { %><a href="<%=request.getContextPath()%>/enquete?acao=listar" class="text-indigo-700 font-medium">Ver todas →</a><% } %>
-            </div>
+    </div>
+  </div>
 
-            <% if (destaques.isEmpty()) { %>
-                <div class="border border-dashed rounded-xl p-8 text-center text-slate-500">Nenhuma enquete ativa cadastrada no banco no momento.</div>
-            <% } else { %>
-            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
-                <% for (EnqueteModel e : destaques) {
-                    List<OpcaoRespostaModel> lista = opcaoDAO.listarPorEnquete(e.getIdEnquete());
-                    int total = votoDAO.contarVotosEnquete(e.getIdEnquete());
-                %>
-                <article class="border rounded-xl p-5 shadow-sm">
-                    <div class="flex items-center justify-between gap-2">
-                        <span class="text-xs font-semibold text-indigo-700 bg-indigo-50 rounded-full px-2 py-1"><%=esc(e.getCategoria() == null ? "Sem categoria" : e.getCategoria().getNomeCategoria())%></span>
-                        <span class="text-xs text-slate-500"><%=total%> voto(s)</span>
-                    </div>
-                    <h3 class="text-lg font-bold mt-3"><%=esc(e.getTitulo())%></h3>
-                    <p class="text-sm text-slate-600 mt-2"><%=esc(e.getDescricao())%></p>
-                    <div class="mt-4 space-y-2">
-                        <% for (OpcaoRespostaModel o : lista) {
-                            int v = votoDAO.contarVotosPorOpcao(o.getIdOpcao());
-                            int pct = total == 0 ? 0 : (int)Math.round(v * 100.0 / total);
-                        %>
-                            <div>
-                                <div class="flex justify-between text-xs"><span><%=esc(o.getDescricaoOpcao())%></span><span><%=pct%>%</span></div>
-                                <div class="h-1.5 bg-slate-100 rounded-full mt-1"><div class="h-1.5 bg-indigo-500 rounded-full" style="width:<%=pct%>%"></div></div>
-                            </div>
-                        <% } %>
-                    </div>
-                    <div class="mt-5">
-                        <% if (logado != null) { %>
-                            <a href="<%=request.getContextPath()%>/enquete?acao=listar" class="text-indigo-700 font-semibold text-sm">Abrir para votar →</a>
-                        <% } else { %>
-                            <a href="#acesso" onclick="mostrarAba('login')" class="text-indigo-700 font-semibold text-sm">Entre para votar →</a>
-                        <% } %>
-                    </div>
-                </article>
-                <% } %>
-            </div>
-            <% } %>
-        </div>
-    </section>
-</main>
+  <!-- Scripts JS -->
+  <script>
+    // Alternar abas Login / Cadastro
+    function switchTab(tab) {
+      const formLogin = document.getElementById('form-login');
+      const formRegister = document.getElementById('form-register');
+      const tabLogin = document.getElementById('tab-login');
+      const tabRegister = document.getElementById('tab-register');
 
-<footer class="max-w-7xl mx-auto w-full px-5 py-6 text-sm text-slate-500">© 2026 Sistema de Enquetes.</footer>
-<script>
-function mostrarAba(aba) {
-    const login = document.getElementById('formLogin');
-    const cadastro = document.getElementById('formCadastro');
-    const btnLogin = document.getElementById('btnLogin');
-    const btnCadastro = document.getElementById('btnCadastro');
-    if (!login || !cadastro) return;
-    const ehLogin = aba === 'login';
-    login.classList.toggle('hidden', !ehLogin);
-    cadastro.classList.toggle('hidden', ehLogin);
-    btnLogin.className = ehLogin ? 'py-3 font-semibold text-indigo-700 border-b-2 border-indigo-600' : 'py-3 font-semibold text-slate-500';
-    btnCadastro.className = !ehLogin ? 'py-3 font-semibold text-indigo-700 border-b-2 border-indigo-600' : 'py-3 font-semibold text-slate-500';
-}
-</script>
+      if (tab === 'login') {
+        formLogin.classList.remove('hidden');
+        formRegister.classList.add('hidden');
+        
+        tabLogin.className = "flex-1 py-3.5 text-sm font-semibold text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400 transition-all";
+        tabRegister.className = "flex-1 py-3.5 text-sm font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-all";
+      } else {
+        formLogin.classList.add('hidden');
+        formRegister.classList.remove('hidden');
+        
+        tabRegister.className = "flex-1 py-3.5 text-sm font-semibold text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600 dark:border-indigo-400 transition-all";
+        tabLogin.className = "flex-1 py-3.5 text-sm font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-all";
+      }
+    }
+
+    // Controlar visibilidade do Pop-up (Modal)
+    function toggleModal(show) {
+      const modal = document.getElementById('modal-forgot-password');
+      if (show) {
+        modal.classList.remove('hidden');
+      } else {
+        modal.classList.add('hidden');
+      }
+    }
+
+    // Simulação do envio de e-mail de recuperação
+    function handleResetPassword(event) {
+      event.preventDefault();
+      const email = document.getElementById('recovery-email').value;
+      alert(`Um link de redefinição foi enviado para: ${email}`);
+      toggleModal(false);
+    }
+
+    // Alternar Modo Escuro
+    function toggleDarkMode() {
+      if (document.documentElement.classList.contains('dark')) {
+        document.documentElement.classList.remove('dark');
+        localStorage.setItem('theme', 'light');
+      } else {
+        document.documentElement.classList.add('dark');
+        localStorage.setItem('theme', 'dark');
+      }
+    }
+  </script>
+
 </body>
 </html>

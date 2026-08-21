@@ -1,96 +1,18 @@
 <%@ page contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
-<%@ page import="java.util.*,java.time.*,java.time.format.DateTimeFormatter,model.*,dao.*" %>
+<%@ page import="java.util.*,model.*" %>
 <%!
-    private String esc(String s) {
-        if (s == null) return "";
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                .replace("\"", "&quot;").replace("'", "&#39;");
-    }
+private String esc(String s){ if(s==null)return ""; return s.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\"","&quot;").replace("'","&#39;"); }
+private String iniciais(String nome){ if(nome==null||nome.isBlank()) return "U"; String[] p=nome.trim().split("\\s+"); return (p[0].substring(0,1)+(p.length>1?p[p.length-1].substring(0,1):"")).toUpperCase(); }
 %>
 <%
-request.setCharacterEncoding("UTF-8");
-response.setCharacterEncoding("UTF-8");
-UsuarioModel usuario = (UsuarioModel) session.getAttribute("usuarioLogado");
-if (usuario == null) { response.sendRedirect(request.getContextPath() + "/index.jsp"); return; }
-if (usuario.getNivelAcesso() != null && usuario.getNivelAcesso().getIdNivelAcesso() == 2) { response.sendRedirect(request.getContextPath() + "/usuario_adm.jsp"); return; }
-
-EnqueteDAO enqueteDAO = new EnqueteDAO();
-OpcaoRespostaDAO opcaoDAO = new OpcaoRespostaDAO();
-VotoDAO votoDAO = new VotoDAO();
-enqueteDAO.atualizarEnquetesExpiradas();
-List<EnqueteModel> enquetes = enqueteDAO.listarTodos();
-Set<Integer> votadas = new HashSet<Integer>(votoDAO.listarIdsEnquetesVotadasPorUsuario(usuario.getIdUsuario()));
-int totalVotos = votoDAO.contarTodosVotos();
-int votosUsuario = votoDAO.contarVotosUsuario(usuario.getIdUsuario());
-int enquetesAtivas = enqueteDAO.contarPorStatus("EM_CURSO");
-String categoriaMaisVotada = votoDAO.buscarCategoriaMaisVotada();
-DateTimeFormatter dataHora = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+request.setCharacterEncoding("UTF-8"); response.setCharacterEncoding("UTF-8");
+UsuarioModel usuario=(UsuarioModel)session.getAttribute("usuarioLogado"); if(usuario==null){response.sendRedirect(request.getContextPath()+"/index.jsp");return;} if(request.getAttribute("enquetes")==null){response.sendRedirect(request.getContextPath()+"/dashboard");return;}
+List<EnqueteModel> enquetes=(List<EnqueteModel>)request.getAttribute("enquetes"); List<CategoriaModel> categorias=(List<CategoriaModel>)request.getAttribute("categorias"); Map<Integer,List<OpcaoRespostaModel>> opcoes=(Map<Integer,List<OpcaoRespostaModel>>)request.getAttribute("opcoesPorEnquete"); Map<Integer,Integer> total=(Map<Integer,Integer>)request.getAttribute("totalPorEnquete"); Map<Integer,Integer> votosOpcao=(Map<Integer,Integer>)request.getAttribute("votosPorOpcao"); Set<Integer> votadas=(Set<Integer>)request.getAttribute("enquetesVotadas");
 %>
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head><meta charset="UTF-8"><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Painel do Usuário</title><script src="https://cdn.tailwindcss.com"></script></head>
-<body class="bg-slate-100 text-slate-900 min-h-screen">
-<header class="bg-white border-b">
-    <div class="max-w-7xl mx-auto px-5 py-4 flex flex-wrap items-center justify-between gap-3">
-        <div><h1 class="text-xl font-bold">Sistema de Enquetes</h1><p class="text-sm text-slate-500">Olá, <%=esc(usuario.getNome())%> • <%=esc(usuario.getEmail())%></p></div>
-        <nav class="flex gap-3 text-sm"><a class="text-indigo-700" href="<%=request.getContextPath()%>/dashboard">Atualizar painel</a><a class="text-indigo-700" href="<%=request.getContextPath()%>/enquete?acao=listar">Todas as enquetes</a><a class="text-red-600" href="<%=request.getContextPath()%>/usuario?acao=logout">Sair</a></nav>
-    </div>
-</header>
-<main class="max-w-7xl mx-auto p-5 md:p-7">
-    <div class="mb-6"><h2 class="text-3xl font-bold">Bem-vindo, <%=esc(usuario.getNome())%></h2><p class="text-slate-500">Vote nas enquetes reais cadastradas no sistema e acompanhe os resultados.</p></div>
-    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <div class="bg-white rounded-xl border p-5"><p class="text-xs text-slate-500">Total de votos no sistema</p><p class="text-3xl font-bold"><%=totalVotos%></p></div>
-        <div class="bg-white rounded-xl border p-5"><p class="text-xs text-slate-500">Seus votos</p><p class="text-3xl font-bold"><%=votosUsuario%></p></div>
-        <div class="bg-white rounded-xl border p-5"><p class="text-xs text-slate-500">Enquetes ativas</p><p class="text-3xl font-bold"><%=enquetesAtivas%></p></div>
-        <div class="bg-white rounded-xl border p-5"><p class="text-xs text-slate-500">Categoria mais votada</p><p class="text-lg font-bold"><%=esc(categoriaMaisVotada)%></p></div>
-    </div>
-
-    <div class="flex items-end justify-between gap-3 mb-4"><div><h2 class="text-2xl font-bold">Enquetes</h2><p class="text-sm text-slate-500">Nenhum conteúdo desta lista é placeholder.</p></div></div>
-    <% if (enquetes.isEmpty()) { %>
-        <div class="bg-white border border-dashed rounded-xl p-8 text-center text-slate-500">Nenhuma enquete cadastrada no banco.</div>
-    <% } else { %>
-    <div class="grid md:grid-cols-2 gap-5">
-        <% for (EnqueteModel e : enquetes) {
-            List<OpcaoRespostaModel> lista = opcaoDAO.listarPorEnquete(e.getIdEnquete());
-            int total = votoDAO.contarVotosEnquete(e.getIdEnquete());
-            boolean jaVotou = votadas.contains(e.getIdEnquete());
-            boolean aberta = "EM_CURSO".equals(e.getStatus()) && e.getDataExpiracao() != null && e.getDataExpiracao().isAfter(LocalDateTime.now());
-        %>
-        <section class="bg-white rounded-xl border p-5">
-            <div class="flex justify-between gap-3">
-                <div><span class="text-xs font-semibold text-indigo-700"><%=esc(e.getCategoria() == null ? "Sem categoria" : e.getCategoria().getNomeCategoria())%></span><h3 class="text-xl font-bold mt-1"><%=esc(e.getTitulo())%></h3></div>
-                <span class="text-xs px-2 py-1 rounded-full h-fit <%=aberta?"bg-emerald-50 text-emerald-700":"bg-slate-100 text-slate-600"%>"><%=aberta?"Em curso":"Encerrada"%></span>
-            </div>
-            <p class="text-sm text-slate-600 mt-3"><%=esc(e.getDescricao())%></p>
-            <p class="text-xs text-slate-500 mt-2">Expira em: <strong><%=e.getDataExpiracao()==null?"-":e.getDataExpiracao().format(dataHora)%></strong></p>
-
-            <% if (jaVotou || !aberta) { %>
-                <div class="mt-4 space-y-3">
-                    <% for (OpcaoRespostaModel o : lista) { int v = votoDAO.contarVotosPorOpcao(o.getIdOpcao()); int pct = total == 0 ? 0 : (int)Math.round(v * 100.0 / total); %>
-                    <div><div class="flex justify-between text-sm gap-3"><span><%=esc(o.getDescricaoOpcao())%></span><span class="whitespace-nowrap"><%=v%> (<%=pct%>%)</span></div><div class="h-2 bg-slate-100 rounded-full mt-1"><div class="h-2 bg-indigo-500 rounded-full" style="width:<%=pct%>%"></div></div></div>
-                    <% } %>
-                </div>
-                <p class="mt-4 text-xs text-slate-500">Total: <%=total%> voto(s)<%=jaVotou?" • Você já votou nesta enquete":""%>.</p>
-            <% } else { %>
-                <form method="post" action="<%=request.getContextPath()%>/voto" class="mt-4 space-y-2" onsubmit="return validarVoto(this)">
-                    <input type="hidden" name="idEnquete" value="<%=e.getIdEnquete()%>">
-                    <% for (OpcaoRespostaModel o : lista) { %>
-                    <label class="block border rounded-lg p-3 hover:bg-slate-50 cursor-pointer"><input type="<%="MULTIPLA".equals(e.getTipoVotacao())?"checkbox":"radio"%>" name="idOpcao" value="<%=o.getIdOpcao()%>" class="mr-2"><%=esc(o.getDescricaoOpcao())%></label>
-                    <% } %>
-                    <button class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg">Registrar voto</button>
-                </form>
-            <% } %>
-        </section>
-        <% } %>
-    </div>
-    <% } %>
-</main>
-<script>
-function validarVoto(form) {
-    const marcadas = form.querySelectorAll('input[name="idOpcao"]:checked');
-    if (marcadas.length === 0) { alert('Selecione pelo menos uma opção antes de votar.'); return false; }
-    return true;
-}
-</script>
-</body>
-</html>
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Enquete - Votações e Estatísticas</title><script src="https://cdn.tailwindcss.com"></script><script>tailwind.config={darkMode:'class'};</script><script src="https://unpkg.com/@phosphor-icons/web"></script><script>if(localStorage.getItem('theme')==='dark'||(!('theme' in localStorage)&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark');}</script></head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-100 antialiased font-sans min-h-screen flex flex-col transition-colors duration-200"><header class="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50 transition-colors"><div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between"><a href="<%=request.getContextPath()%>/dashboard" class="flex items-center gap-2"><img src="<%=request.getContextPath()%>/assets/img/logo.png" alt="Enquete Online Logo" class="h-20 w-auto object-contain"></a><div class="hidden md:flex items-center flex-1 max-w-md mx-8"><div class="relative w-full"><i class="ph ph-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 text-lg"></i><input id="search-polls" type="text" placeholder="Buscar enquetes ou resultados..." class="w-full pl-10 pr-4 py-2 bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white dark:focus:bg-gray-700 transition-all"></div></div><div class="flex items-center gap-3"><button id="btn-theme-toggle" aria-label="Alternar modo escuro" class="p-2 rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none transition-colors"><i id="theme-icon" class="ph ph-moon text-xl"></i></button><span class="hidden sm:inline-flex items-center gap-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs font-semibold px-2.5 py-1 rounded-md border border-gray-200 dark:border-gray-600"><i class="ph ph-user text-sm"></i>Eleitor</span><div class="h-6 w-px bg-gray-200 dark:bg-gray-700 mx-1"></div><div class="relative" id="user-menu-container"><button id="btn-user-dropdown" class="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors focus:outline-none"><div class="w-9 h-9 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center font-bold text-sm shadow-sm"><%=iniciais(usuario.getNome())%></div><div class="hidden sm:block text-left"><p class="text-sm font-medium text-gray-900 dark:text-gray-100 leading-none"><%=esc(usuario.getNome())%></p><span class="text-xs text-gray-500 dark:text-gray-400">Usuário comum</span></div><i class="ph ph-caret-down text-xs text-gray-500 dark:text-gray-400 ml-1"></i></button><div id="user-dropdown" class="hidden absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 py-2 z-50"><div class="px-4 py-2 border-b border-gray-100 dark:border-gray-700"><p class="text-sm font-semibold text-gray-900 dark:text-gray-100"><%=esc(usuario.getNome())%></p><p class="text-xs text-gray-500 dark:text-gray-400 truncate"><%=esc(usuario.getEmail())%></p></div><div class="py-1"><a href="#enquetes" class="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"><i class="ph ph-check-square-offset text-lg text-gray-500 dark:text-gray-400"></i><span>Meu Histórico de Votos</span></a></div><div class="border-t border-gray-100 dark:border-gray-700 my-1"></div><div class="px-1"><a href="<%=request.getContextPath()%>/usuario?acao=logout" class="flex items-center gap-2.5 px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors font-medium"><i class="ph ph-sign-out text-lg"></i><span>Sair da conta</span></a></div></div></div></div></div></header>
+<main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow w-full">
+<% if(request.getParameter("sucesso")!=null){ %><div class="mb-5 rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/40 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300"><%= "voto".equals(request.getParameter("sucesso")) ? "Voto registrado com sucesso." : "Enquete salva com sucesso." %></div><% } %>
+<% if(request.getParameter("erro")!=null){ String er=request.getParameter("erro"); String msg="Não foi possível concluir a operação."; if("jaVotou".equals(er))msg="Você já votou nesta enquete."; else if("encerrada".equals(er))msg="Esta enquete está encerrada."; else if("semOpcao".equals(er))msg="Selecione pelo menos uma opção."; else if("limiteIp".equals(er))msg="O limite de participantes por IP foi atingido."; else if("limiteTotal".equals(er))msg="O limite total de votos desta enquete foi atingido."; %><div class="mb-5 rounded-xl border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 px-4 py-3 text-sm text-red-700 dark:text-red-300"><%=msg%></div><% } %><section class="mb-8"><h2 class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-3 flex items-center gap-1.5"><i class="ph ph-chart-pie-slice text-indigo-600 dark:text-indigo-400 text-sm"></i> Estatísticas da Plataforma</h2><div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"><div class="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex items-center gap-4"><div class="w-12 h-12 bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 rounded-lg flex items-center justify-center text-2xl"><i class="ph ph-check-fat"></i></div><div><p class="text-xs text-gray-500 dark:text-gray-400 font-medium">Total de Votos Registrados</p><p class="text-2xl font-bold"><%=request.getAttribute("totalVotos")%></p></div></div><div class="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex items-center gap-4"><div class="w-12 h-12 bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 rounded-lg flex items-center justify-center text-2xl"><i class="ph ph-user-check"></i></div><div><p class="text-xs text-gray-500 dark:text-gray-400 font-medium">Seus Votos Computados</p><p class="text-2xl font-bold"><%=request.getAttribute("votosUsuario")%></p></div></div><div class="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex items-center gap-4"><div class="w-12 h-12 bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 rounded-lg flex items-center justify-center text-2xl"><i class="ph ph-lightning"></i></div><div><p class="text-xs text-gray-500 dark:text-gray-400 font-medium">Enquetes Ativas</p><p class="text-2xl font-bold"><%=request.getAttribute("enquetesAtivas")%></p></div></div><div class="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex items-center gap-4"><div class="w-12 h-12 bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 rounded-lg flex items-center justify-center text-2xl"><i class="ph ph-trophy"></i></div><div><p class="text-xs text-gray-500 dark:text-gray-400 font-medium">Categoria Mais Votada</p><p class="text-lg font-bold truncate"><%=esc(String.valueOf(request.getAttribute("categoriaMaisVotada")))%></p></div></div></div></section>
+<section class="mb-8"><div class="flex items-center justify-between mb-4"><h2 class="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center gap-2"><i class="ph ph-funnel text-indigo-600 dark:text-indigo-400"></i> Filtrar Por Categoria</h2></div><div class="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none"><button class="filter-cat bg-indigo-600 text-white px-4 py-2 rounded-full text-sm font-medium shadow-sm" data-cat="">Todas</button><% for(CategoriaModel c:categorias){ %><button class="filter-cat bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 px-4 py-2 rounded-full text-sm font-medium transition-colors" data-cat="<%=esc(c.getNomeCategoria().toLowerCase())%>"><%=esc(c.getNomeCategoria())%></button><% } %></div></section>
+<section id="enquetes"><div id="poll-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"><% if(enquetes==null||enquetes.isEmpty()){ %><div class="col-span-full bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-8 text-center text-gray-500">Nenhuma enquete disponível.</div><% } else for(EnqueteModel e:enquetes){ List<OpcaoRespostaModel> ops=opcoes.get(e.getIdEnquete()); int t=total.getOrDefault(e.getIdEnquete(),0); boolean ja=votadas.contains(e.getIdEnquete()); boolean ativa="EM_CURSO".equals(e.getStatus()); %><div class="poll-card bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 flex flex-col justify-between transition-colors" data-cat="<%=esc(e.getCategoria().getNomeCategoria().toLowerCase())%>" data-title="<%=esc(e.getTitulo().toLowerCase())%>"><div><div class="flex items-center justify-between mb-3"><span class="bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-xs font-semibold px-2.5 py-1 rounded-md"><%=esc(e.getCategoria().getNomeCategoria())%></span><span class="<%=ativa?"bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300":"bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300"%> text-xs font-medium px-2.5 py-1 rounded-full"><%=ativa?"Ativa":"Encerrada"%></span></div><h3 class="font-bold text-gray-900 dark:text-gray-100 text-lg mb-1"><%=esc(e.getTitulo())%></h3><p class="text-gray-600 dark:text-gray-400 text-sm mb-4"><%=esc(e.getDescricao())%></p><% if(ja||!ativa){ %><div class="space-y-4 mb-6"><% if(ops!=null) for(OpcaoRespostaModel o:ops){ int n=votosOpcao.getOrDefault(o.getIdOpcao(),0); int pct=t==0?0:(int)Math.round(n*100.0/t); %><div><div class="flex justify-between text-xs font-medium mb-1"><span><%=esc(o.getDescricaoOpcao())%></span><span class="text-gray-500 dark:text-gray-400"><%=pct%>% (<%=n%> votos)</span></div><div class="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2.5"><div class="bg-indigo-600 dark:bg-indigo-500 h-2.5 rounded-full" style="width:<%=pct%>%"></div></div></div><% } %></div><% } else { %><form method="post" action="<%=request.getContextPath()%>/voto" class="space-y-2 mb-6"><input type="hidden" name="idEnquete" value="<%=e.getIdEnquete()%>"><% if(ops!=null) for(OpcaoRespostaModel o:ops){ %><label class="flex items-center p-3 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"><input type="<%="MULTIPLA".equals(e.getTipoVotacao())?"checkbox":"radio"%>" name="idOpcao" value="<%=o.getIdOpcao()%>" <%= "MULTIPLA".equals(e.getTipoVotacao())?"":"required" %> class="text-indigo-600 focus:ring-indigo-500 dark:bg-gray-700 border-gray-300 dark:border-gray-600 h-4 w-4"><span class="ml-3 text-sm font-medium text-gray-700 dark:text-gray-300"><%=esc(o.getDescricaoOpcao())%></span></label><% } %><button class="mt-3 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-xs transition-colors">Votar</button></form><% } %></div><div class="border-t border-gray-100 dark:border-gray-700 pt-4 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400"><span class="flex items-center gap-1"><i class="ph ph-chart-bar text-sm"></i> <%=t%> votos registrados</span><% if(ja){ %><span class="flex items-center gap-1 text-emerald-600"><i class="ph ph-check-circle"></i> Você já votou</span><% } %></div></div><% } %></div></section></main><script src="<%=request.getContextPath()%>/assets/js/script.js"></script><script>document.querySelectorAll('.filter-cat').forEach(b=>b.addEventListener('click',()=>{const c=b.dataset.cat;document.querySelectorAll('.poll-card').forEach(x=>x.classList.toggle('hidden',c&&x.dataset.cat!==c));}));const search=document.getElementById('search-polls');if(search)search.addEventListener('input',()=>{const q=search.value.toLowerCase();document.querySelectorAll('.poll-card').forEach(x=>x.classList.toggle('hidden',!x.dataset.title.includes(q)));});</script></body></html>
